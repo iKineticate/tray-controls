@@ -1,7 +1,6 @@
 # tray-controls
 
-[<img alt="crates.io" src="https://img.shields.io/crates/v/tray-controls.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/tray-controls)
-[<img alt="docs.rs" src="https://img.shields.io/badge/docs.rs-tray-controls-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs" height="20">](https://docs.rs/tray-controls)
+[![Licence](https://img.shields.io/badge/license-MIT-blue.svg?style=flat)](LICENSE) [![Crates.io version](https://img.shields.io/crates/v/tray-controls)](https://crates.io/crates/tray-controls)
 
 <h3 align="center"> English | <a href="./README.zh-CN.md">简体中文</a> </h3>
 
@@ -85,8 +84,8 @@ pub enum CheckMenuKind<G> {
     CheckBox(Rc<CheckMenuItem>, G), 
     // Checkbox menu item with group identifier
 
-    Radio(Rc<CheckMenuItem>, Rc<DefaultMenuId>, G), 
-    // Radio menu item with default selection and group identifier
+    Radio(Rc<CheckMenuItem>, Option<Rc<DefaultMenuId>>, G), 
+    // Radio menu item with option default selection and group identifier
 
     Separate(Rc<CheckMenuItem>), 
     // Independent checkbox menu item (not grouped)
@@ -131,7 +130,7 @@ manager.insert(MenuControl::CheckMenu(
 manager.insert(MenuControl::CheckMenu(
     CheckMenuKind::Radio(
         Rc::new(radio_menu_item),
-        MenuId::new(),
+        Some(MenuId::new("default_radio_id")),
         MenuGroup::RadioA,
     ),
 ));

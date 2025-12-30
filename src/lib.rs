@@ -18,9 +18,11 @@ type DefaultMenuId = MenuId;
 /// - Grouping: Items with the same `G` value belong to the same logical group
 ///
 /// ### `Radio`
-/// - Contains: `Rc<CheckMenuItem>`, default `MenuId`, and group identifier `G`
+/// - Contains: `Rc<CheckMenuItem>`, optional default `MenuId`, and group identifier `G`
 /// - Purpose: A radio button where only one item in the same group can be selected
-/// - Default ID: Specifies which menu should be selected when no radio in the group is checked
+/// - Default ID:   
+///         If `Some`, specifies which menu should be selected when all radios in the group are unchecked.   
+///         If `None`, no action is taken when all radios are unchecked.   
 /// - Grouping: All radio buttons with the same `G` value form a single selection group
 ///
 /// ### `Separate`
@@ -50,7 +52,7 @@ type DefaultMenuId = MenuId;
 /// let radio = CheckMenuItem::with_id("light_theme", "Light Theme", true, true, None);
 /// let radio_kind = CheckMenuKind::Radio(
 ///     Rc::new(radio),
-///     Rc::new(MenuId::new("light_theme")),
+///     Some(Rc::new(MenuId::new("light_theme"))),
 ///     "theme_group"
 /// );
 ///
@@ -60,12 +62,28 @@ type DefaultMenuId = MenuId;
 /// ```
 #[derive(Clone)]
 pub enum CheckMenuKind<G> {
+    /// A standard checkbox with group association
+    /// 
+    /// - First parameter: The checkbox menu item
+    /// - Second parameter: Group identifier for logical grouping
     CheckBox(Rc<CheckMenuItem>, G),
+
+    /// A radio button with optional default selection and group association
+    /// 
+    /// - First parameter: The radio button menu item
+    /// - Second parameter: Optional default menu ID to select when no radio is checked.
+    ///                    If `Some`, this menu will be selected when all radios in the group are unchecked.
+    ///                    If `None`, no menu will be selected when all radios are unchecked.
+    /// - Third parameter: Group identifier for exclusive selection
     Radio(
         Rc<CheckMenuItem>,
-        /* Default Radio Menu ID*/ Rc<DefaultMenuId>,
+        Option<Rc<DefaultMenuId>>,
         G,
     ),
+
+    /// A standalone checkbox with no group association
+    /// 
+    /// - Parameter: The standalone checkbox menu item
     Separate(Rc<CheckMenuItem>),
 }
 
@@ -158,7 +176,11 @@ impl<G> MenuControl<G> {
 /// // Add radio buttons with group ID "color_group"
 /// let radio = CheckMenuItem::with_id("red", "Red", true, true, None);
 /// manager.insert(MenuControl::CheckMenu(
-///     CheckMenuKind::Radio(Rc::new(radio), Rc::new(MenuId::new("radio default id")), "color_group")
+///     CheckMenuKind::Radio(
+///         Rc::new(radio),
+///         Some(Rc::new(MenuId::new("radio default id"))),
+///         "color_group"
+///     )
 /// ));
 ///
 /// // Handle menu clicks - radio groups are automatically synchronized
@@ -194,7 +216,11 @@ impl<G> MenuControl<G> {
 /// // Add radio buttons with group ID "RadioColor", and set the default radio menu ID
 /// let radio = CheckMenuItem::with_id("red", "Red", true, true, None);
 /// manager.insert(MenuControl::CheckMenu(
-///     CheckMenuKind::Radio(Rc::new(radio), Rc::new(MenuId::new("red")), MenuGroup::RadioColor)
+///     CheckMenuKind::Radio(
+///         Rc::new(radio),
+///         Some(Rc::new(MenuId::new("red"))),
+///         MenuGroup::RadioColor
+///     )
 /// ));
 ///
 /// // Handle menu clicks - radio groups are automatically synchronized
@@ -314,6 +340,10 @@ where
                             let (is_checked_menu_id, is_checked_menu) = if click_menu_state {
                                 (check_menu.id(), Some(menu))
                             } else {
+                                let Some(default_menu_id) = default_menu_id else {
+                                    return callback(menu_control);
+                                };
+
                                 let default_menu = self.get_menu_item_from_id(default_menu_id);
 
                                 if let Some(MenuControl::CheckMenu(CheckMenuKind::Radio(

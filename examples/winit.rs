@@ -109,7 +109,9 @@ impl ApplicationHandler<UserEvent> for App {
                                     }
                                 }
                                 CheckMenuKind::Radio(checked_menu, default_menu_id, group) => {
-                                    if default_menu_id.as_ref() == checked_menu.id() {
+                                    if let Some(default_menu_id) = default_menu_id
+                                        && default_menu_id.as_ref() == checked_menu.id()
+                                    {
                                         println!("The Radio Menu is check default")
                                     }
 
@@ -190,7 +192,7 @@ fn create_menu(menu_manager: &mut MenuManager<MenuGroup>) -> Result<Menu> {
             .map(|check_menu_item| {
                 menu_manager.insert(MenuControl::CheckMenu(CheckMenuKind::Radio(
                     Rc::new(check_menu_item.clone()),
-                    Rc::new(red_menu_id.clone()),
+                    Some(Rc::new(red_menu_id.clone())), // your radio default menu id
                     MenuGroup::RadioColor,
                 )));
 
@@ -220,7 +222,7 @@ fn create_menu(menu_manager: &mut MenuManager<MenuGroup>) -> Result<Menu> {
             .map(|check_menu_item| {
                 menu_manager.insert(MenuControl::CheckMenu(CheckMenuKind::Radio(
                     Rc::new(check_menu_item.clone()),
-                    Rc::new(english_menu_id.clone()),
+                    Some(Rc::new(english_menu_id.clone())),
                     MenuGroup::RadioLanguage,
                 )));
 
