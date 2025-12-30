@@ -47,7 +47,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tray-control = "0.1.0"
+tray-control = "0.1.2"
 tray-icon = "0.21.2"
 ```
 
