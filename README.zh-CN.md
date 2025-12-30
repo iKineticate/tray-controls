@@ -33,7 +33,7 @@
 
 ```toml
 [dependencies]
-tray-control =  "0.1.0"
+tray-control =  "0.1.2"
 tray-icon = "0.21.2"
 ```
 示例使用 **winit + tray-icon + tray-control**：
@@ -94,8 +94,7 @@ manager.insert(MenuControl::CheckMenu(
 manager.insert(MenuControl::CheckMenu(
      CheckMenuKind::Radio(
         Rc::new(radio_menu_item),
-        Some(MenuId::new("        Some(MenuId::new("default_radio_id")),
-")),
+        Some(MenuId::new("default_radio_id")),
         MenuGroup::RadioA,
     )
 ));
