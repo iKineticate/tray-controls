@@ -1,0 +1,22 @@
+[package]
+name = "tray-controls"
+version = "0.1.0"
+edition = "2024"
+authors = ["iKineticate"]
+keywords = ["tray-icon", "tray", "radio", "checkbox"]
+readme = "README.md"
+description = "An enhanced menu management tool designed for the tray-icon library"
+repository = "https://github.com/iKineticate/tray-controls"
+homepage = "https://github.com/iKineticate/tray-controls"
+documentation = "https://docs.rs/tray-controls"
+license = "MIT"
+
+[dependencies]
+tray-icon = "0.21.2"
+
+[dev-dependencies]
+winit = "0.30.12"
+anyhow = "1"
+
+[package.metadata.docs.rs]
+default-target = "x86_64-pc-windows-msvc"
