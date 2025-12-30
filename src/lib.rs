@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::rc::Rc;
 
-use tray_icon::menu::{CheckMenuItem, IconMenuItem, MenuId, MenuItem};
+use tray_icon::menu::{CheckMenuItem, IconMenuItem, MenuId, MenuItem, accelerator::Accelerator};
 
 type DefaultMenuId = MenuId;
 
@@ -21,8 +21,8 @@ type DefaultMenuId = MenuId;
 /// - Contains: `Rc<CheckMenuItem>`, optional default `MenuId`, and group identifier `G`
 /// - Purpose: A radio button where only one item in the same group can be selected
 /// - Default ID:   
-///         If `Some`, specifies which menu should be selected when all radios in the group are unchecked.   
-///         If `None`, no action is taken when all radios are unchecked.   
+///   If `Some`, specifies which menu should be selected when all radios in the group are unchecked.   
+///   If `None`, no action is taken when all radios are unchecked.   
 /// - Grouping: All radio buttons with the same `G` value form a single selection group
 ///
 /// ### `Separate`
@@ -63,26 +63,22 @@ type DefaultMenuId = MenuId;
 #[derive(Clone)]
 pub enum CheckMenuKind<G> {
     /// A standard checkbox with group association
-    /// 
+    ///
     /// - First parameter: The checkbox menu item
     /// - Second parameter: Group identifier for logical grouping
     CheckBox(Rc<CheckMenuItem>, G),
 
     /// A radio button with optional default selection and group association
-    /// 
+    ///
     /// - First parameter: The radio button menu item
     /// - Second parameter: Optional default menu ID to select when no radio is checked.
-    ///                    If `Some`, this menu will be selected when all radios in the group are unchecked.
-    ///                    If `None`, no menu will be selected when all radios are unchecked.
+    ///   If `Some`, this menu will be selected when all radios in the group are unchecked.
+    ///   If `None`, no menu will be selected when all radios are unchecked.
     /// - Third parameter: Group identifier for exclusive selection
-    Radio(
-        Rc<CheckMenuItem>,
-        Option<Rc<DefaultMenuId>>,
-        G,
-    ),
+    Radio(Rc<CheckMenuItem>, Option<Rc<DefaultMenuId>>, G),
 
     /// A standalone checkbox with no group association
-    /// 
+    ///
     /// - Parameter: The standalone checkbox menu item
     Separate(Rc<CheckMenuItem>),
 }
@@ -115,6 +111,59 @@ impl<G> MenuControl<G> {
                 CheckMenuKind::CheckBox(check_menu, _)
                 | CheckMenuKind::Radio(check_menu, _, _)
                 | CheckMenuKind::Separate(check_menu) => check_menu.text(),
+            },
+        }
+    }
+
+    pub fn set_checked(&self, checked: bool) -> bool {
+        match self {
+            MenuControl::CheckMenu(check_menu_kind) => match check_menu_kind {
+                CheckMenuKind::CheckBox(check_menu, _)
+                | CheckMenuKind::Radio(check_menu, _, _)
+                | CheckMenuKind::Separate(check_menu) => {
+                    check_menu.set_checked(checked);
+                    true
+                }
+            },
+            _ => false,
+        }
+    }
+
+    pub fn set_enabled(&self, enabled: bool) {
+        match self {
+            MenuControl::MenuItem(menu_item) => menu_item.set_enabled(enabled),
+            MenuControl::IconMenu(icon_menu) => icon_menu.set_enabled(enabled),
+            MenuControl::CheckMenu(check_menu_kind) => match check_menu_kind {
+                CheckMenuKind::CheckBox(check_menu, _)
+                | CheckMenuKind::Radio(check_menu, _, _)
+                | CheckMenuKind::Separate(check_menu) => check_menu.set_enabled(enabled),
+            },
+        }
+    }
+
+    pub fn set_text(&self, text: &str) {
+        match self {
+            MenuControl::MenuItem(menu_item) => menu_item.set_text(text),
+            MenuControl::IconMenu(icon_menu) => icon_menu.set_text(text),
+            MenuControl::CheckMenu(check_menu_kind) => match check_menu_kind {
+                CheckMenuKind::CheckBox(check_menu, _)
+                | CheckMenuKind::Radio(check_menu, _, _)
+                | CheckMenuKind::Separate(check_menu) => check_menu.set_text(text),
+            },
+        }
+    }
+
+    pub fn set_accelerator(
+        &self,
+        accelerator: Option<Accelerator>,
+    ) -> Result<(), tray_icon::menu::Error> {
+        match self {
+            MenuControl::MenuItem(menu_item) => menu_item.set_accelerator(accelerator),
+            MenuControl::IconMenu(icon_menu) => icon_menu.set_accelerator(accelerator),
+            MenuControl::CheckMenu(check_menu_kind) => match check_menu_kind {
+                CheckMenuKind::CheckBox(check_menu, _)
+                | CheckMenuKind::Radio(check_menu, _, _)
+                | CheckMenuKind::Separate(check_menu) => check_menu.set_accelerator(accelerator),
             },
         }
     }
@@ -324,7 +373,9 @@ where
 
     /// Updates the menu control state based on the provided menu ID, and callback the menu control.
     ///
-    /// If the menu control is a radio, it ensures that only one item in the group is checked, and callbakc the cheked menu control.
+    /// NOTE: If the menu control is a radio:    
+    ///     there is a default radio menu, the cllback menu control is the cheked menu   
+    ///     there is no default radio menu, the callback menu control is the click menu   
     pub fn update(&mut self, menu_id: &MenuId, callback: impl Fn(Option<&MenuControl<G>>)) {
         let menu_control = self.id_to_menu.get(menu_id);
 
