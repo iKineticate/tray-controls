@@ -1,6 +1,6 @@
 [package]
 name = "tray-controls"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 authors = ["iKineticate"]
 keywords = ["tray-icon", "tray", "radio", "checkbox"]
@@ -12,8 +12,8 @@ documentation = "https://docs.rs/tray-controls"
 license = "MIT"
 
 [dependencies]
-tray-icon = ">=0.20.0"
-getset = ">=0.1.2"
+tray-icon = ">=0.20"
+getset = ">=0.1"
 
 [dev-dependencies]
 winit = "0.30.12"
