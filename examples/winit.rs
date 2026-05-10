@@ -1,11 +1,10 @@
-use std::rc::Rc;
-
 use anyhow::{Result, anyhow};
-use tray_controls::{CheckMenuKind, MenuControl, MenuManager};
+use tray_controls::MenuRegistry;
 use tray_icon::{
     TrayIcon, TrayIconBuilder,
     menu::{
-        CheckMenuItem, IsMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem, Submenu,
+        CheckMenuItem, IsMenuItem, Menu, MenuEvent, MenuId, MenuItem, MenuItemKind,
+        PredefinedMenuItem, Submenu,
     },
 };
 use winit::{
@@ -32,8 +31,8 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-// need add derive
-#[derive(Clone, PartialEq, Eq, Hash)]
+// 1: create your menu group (need add derive)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum MenuGroup {
     RadioColor,
     RadioLanguage,
@@ -44,23 +43,28 @@ enum MenuGroup {
 enum UserEvent {
     Exit,
     MenuEvent(MenuEvent),
+    UpdateIcon(String),
 }
 
 struct App {
     event_loop_proxy: EventLoopProxy<UserEvent>,
-    menu_manager: MenuManager<MenuGroup>,
+    // 2: add MenuRegistry with your menu group
+    menu_registry: MenuRegistry<MenuGroup>,
     tray: Option<TrayIcon>,
 }
 
 impl App {
     fn new(event_loop_proxy: EventLoopProxy<UserEvent>) -> Result<Self> {
-        let mut menu_manager: MenuManager<MenuGroup> = MenuManager::new();
-        let menu = create_menu(&mut menu_manager)?;
+        // 3: create MenuRegistry
+        let mut menu_registry: MenuRegistry<MenuGroup> = MenuRegistry::new();
+        // 4: insert menu controls with your menu group
+        let menu = create_menu(&mut menu_registry)?;
+
         let tray = create_tray(menu)?;
 
         Ok(App {
             event_loop_proxy,
-            menu_manager,
+            menu_registry,
             tray: Some(tray),
         })
     }
@@ -74,7 +78,9 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
             }
-            _ => {}
+            _ => {
+                // do something
+            }
         }
     }
 
@@ -84,117 +90,144 @@ impl ApplicationHandler<UserEvent> for App {
                 event_loop.exit();
             }
             UserEvent::MenuEvent(event) => {
-                let click_menu_id = event.id();
-                self.menu_manager.update(click_menu_id, |menu_control| {
-                    if let Some(menu_control) = menu_control {
-                        match menu_control {
-                            MenuControl::CheckMenu(check_menu_kind) => match check_menu_kind {
-                                CheckMenuKind::Separate(check_menu) => {
-                                    println!(
-                                        "Click the Separate Check Menu: {:?}\n",
-                                        check_menu.text()
-                                    );
-                                }
-                                CheckMenuKind::CheckBox(check_menu, group) => {
-                                    match group {
-                                        MenuGroup::CheckBoxChange => {
-                                            println!(
-                                                "Click the Check Box Menu(Change): {:?}\n",
-                                                check_menu.text()
-                                            );
+                // 6: handle menu event
+                match self.menu_registry.handle_event(event.id()) {
+                    Err(err) => {
+                        println!("Failed to handle menu event: {err}");
+                    }
+                    Ok(return_menu_meta) => {
+                        let return_menu_group = return_menu_meta.group();
+                        let return_menu_kind = return_menu_meta.kind();
+                        let return_menu_id = return_menu_kind.id();
+
+                        match return_menu_group {
+                            // normal menu
+                            None => match return_menu_kind {
+                                MenuItemKind::MenuItem(_m) => {
+                                    match return_menu_id.0.as_str() {
+                                        "quit" => {
+                                            let _ =
+                                                self.event_loop_proxy.send_event(UserEvent::Exit);
+                                        }
+                                        _ => {
                                             // TODO: do something
                                         }
-                                        // your check box menu group id
-                                        _ => {}
                                     }
                                 }
-                                CheckMenuKind::Radio(checked_menu, default_menu_id, group) => {
-                                    if let Some(default_menu_id) = default_menu_id
-                                        && default_menu_id.as_ref() == checked_menu.id()
-                                    {
-                                        println!("The Radio Menu is check default")
-                                    }
-
-                                    match group {
-                                        MenuGroup::RadioColor => {
-                                            println!(
-                                                "Check the Radio Menu(Color): {:?}\n",
-                                                checked_menu.text()
-                                            );
-                                            let color = if checked_menu.id().0 == "red" {
-                                                [255u8, 0, 0, 255]
-                                            } else if checked_menu.id().0 == "green" {
-                                                [0u8, 255, 0, 255]
-                                            } else if checked_menu.id().0 == "blue" {
-                                                [0u8, 0, 255, 255]
-                                            } else {
-                                                return;
-                                            };
-
-                                            let icon = create_icon(color);
-
-                                            if let Some(tray) = &self.tray {
-                                                let _ = tray.set_icon(Some(icon));
-                                            }
-                                        }
-                                        MenuGroup::RadioLanguage => {
-                                            println!(
-                                                "Check the Radio Menu(Language): {:?}\n",
-                                                checked_menu.text()
-                                            );
-                                            // TODO: change language
-                                        }
-                                        _ => {}
-                                    }
+                                MenuItemKind::Check(_check_menu_item) => {
+                                    // TODO: do something
                                 }
+                                MenuItemKind::Icon(_icon_menu_item) => {
+                                    // TODO: do something
+                                }
+                                MenuItemKind::Predefined(_predefined_menu_item) => {
+                                    // TODO: do something
+                                }
+                                _ => {
+                                    // Submenu not supported
+                                } // If the type of the menu in the ungrouped menu is only [MenuItem], you can do something by directly matching the ID of the returned menu
+                                  // match return_menu_id.0.as_str(){
+                                  //     "quit" => {
+                                  //         let _ = self.event_loop_proxy.send_event(UserEvent::Exit);
+                                  //     }
+                                  //     "about" => {
+                                  //         // do something
+                                  //     }
+                                  //     _ => {
+                                  //         // do something
+                                  //     }
+                                  // }
                             },
-                            MenuControl::IconMenu(icon_menu) => {
-                                println!("Click Icon Menu: {:?}\n", icon_menu.text());
-                                // TODO: do something
-                            }
-                            MenuControl::MenuItem(menu_item) => {
-                                println!("Click Menu Item: {:?}\n", menu_item.text());
-                                if click_menu_id.0 == "quit" {
-                                    let _ = self.event_loop_proxy.send_event(UserEvent::Exit);
+                            // menu group
+                            Some(group) => {
+                                match group {
+                                    // 7(1): handle radio menu
+                                    MenuGroup::RadioColor => {
+                                        // The [as_check_menuitem()] method will not panic because in the handle_event() method,
+                                        // it has been determined that if the menu in the [Checkbox] or [Radio] group is not of the [CheckMenuItem] type,
+                                        // an error will be returned directly.
+                                        let return_menu =
+                                            return_menu_kind.as_check_menuitem().unwrap();
+
+                                        println!(
+                                            "Check the radio Menu(Color): {:?}\n",
+                                            return_menu.text()
+                                        );
+
+                                        let _ = self.event_loop_proxy.send_event(
+                                            UserEvent::UpdateIcon(return_menu_id.0.clone()),
+                                        );
+                                    }
+                                    MenuGroup::RadioLanguage => {
+                                        println!(
+                                            "Click the radio menu(Language): {:?}\n",
+                                            return_menu_id
+                                        );
+                                        // TODO: do something
+                                    }
+
+                                    // 7(2): handle checkbox menu
+                                    MenuGroup::CheckBoxChange => {
+                                        println!("Click the checkbox menu: {:?}\n", return_menu_id);
+                                        // TODO: do something
+                                    } // handle other non-checkmenuitem menu groups (for multiple TrayIcon)
                                 }
-                                // else if click_menu_id.0 == "your menu id" {
-                                //     // TODO: do something
-                                // }
                             }
                         }
                     }
-                });
+                }
+            }
+            UserEvent::UpdateIcon(color) => {
+                let color = if color == "red" {
+                    [255u8, 0, 0, 255]
+                } else if color == "green" {
+                    [0u8, 255, 0, 255]
+                } else if color == "blue" {
+                    [0u8, 0, 255, 255]
+                } else {
+                    return;
+                };
+
+                let icon = create_icon(color);
+
+                if let Some(tray) = &self.tray {
+                    let _ = tray.set_icon(Some(icon));
+                }
             }
         }
     }
 }
 
-fn create_menu(menu_manager: &mut MenuManager<MenuGroup>) -> Result<Menu> {
+// 5: create menu and insert menu controls with your menu group
+fn create_menu(menu_registry: &mut MenuRegistry<MenuGroup>) -> Result<Menu> {
     let separator_menu_item = PredefinedMenuItem::separator();
 
-    let quit_menu_id = MenuId::new("quit");
-    let quit_menu_item = MenuItem::with_id(quit_menu_id, "Quit", true, None);
-    menu_manager.insert(MenuControl::MenuItem(quit_menu_item.clone()));
+    // Normal Menu
+    let quit_menu_item = MenuItem::with_id("quit", "Quit", true, None);
+    menu_registry.register_normal(quit_menu_item.kind());
 
-    // Color Radio Check Menu
+    // Color Radio Menu
     let color_sub_menu_item = {
         let red_menu_id = MenuId::new("red");
         let green_menu_id = MenuId::new("green");
         let blue_menu_id = MenuId::new("blue");
 
         let red_menu_item = CheckMenuItem::with_id(red_menu_id.clone(), "Red", true, true, None);
-        let green_menu_item = CheckMenuItem::with_id(green_menu_id, "Green", true, false, None);
-        let blue_menu_item = CheckMenuItem::with_id(blue_menu_id, "Blue", true, false, None);
+        let green_menu_item =
+            CheckMenuItem::with_id(green_menu_id.clone(), "Green", true, false, None);
+        let blue_menu_item =
+            CheckMenuItem::with_id(blue_menu_id.clone(), "Blue", true, false, None);
 
         let menu_items = [red_menu_item, green_menu_item, blue_menu_item];
         let menu_items: Vec<&dyn IsMenuItem> = menu_items
             .iter()
             .map(|check_menu_item| {
-                menu_manager.insert(MenuControl::CheckMenu(CheckMenuKind::Radio(
-                    Rc::new(check_menu_item.clone()),
-                    Some(Rc::new(red_menu_id.clone())), // your radio default menu id
+                // register Radio Menu
+                menu_registry.register_radio(
+                    check_menu_item.kind(),
                     MenuGroup::RadioColor,
-                )));
+                    Some(red_menu_id.clone()),
+                );
 
                 check_menu_item as &dyn IsMenuItem
             })
@@ -203,7 +236,7 @@ fn create_menu(menu_manager: &mut MenuManager<MenuGroup>) -> Result<Menu> {
         Submenu::with_items("Color", true, &menu_items)?
     };
 
-    // Language Radio Check Menu
+    // Language Radio Menu
     let language_sub_menu_item = {
         let english_menu_id = MenuId::new("english");
         let chinise_menu_id = MenuId::new("chinise");
@@ -220,11 +253,12 @@ fn create_menu(menu_manager: &mut MenuManager<MenuGroup>) -> Result<Menu> {
         let menu_items: Vec<&dyn IsMenuItem> = menu_items
             .iter()
             .map(|check_menu_item| {
-                menu_manager.insert(MenuControl::CheckMenu(CheckMenuKind::Radio(
-                    Rc::new(check_menu_item.clone()),
-                    Some(Rc::new(english_menu_id.clone())),
+                // register Radio Menu
+                menu_registry.register_radio(
+                    check_menu_item.kind(),
                     MenuGroup::RadioLanguage,
-                )));
+                    Some(english_menu_id.clone()),
+                );
 
                 check_menu_item as &dyn IsMenuItem
             })
@@ -233,7 +267,7 @@ fn create_menu(menu_manager: &mut MenuManager<MenuGroup>) -> Result<Menu> {
         Submenu::with_items("Language", true, &menu_items)?
     };
 
-    // CheckBoxChange Check Box Menu
+    // Change CheckBox Menu
     let change_sub_menu_item = {
         let added_menu_id = MenuId::new("added");
         let removed_menu_id = MenuId::new("removed");
@@ -257,10 +291,8 @@ fn create_menu(menu_manager: &mut MenuManager<MenuGroup>) -> Result<Menu> {
         let menu_items: Vec<&dyn IsMenuItem> = menu_items
             .iter()
             .map(|check_menu_item| {
-                menu_manager.insert(MenuControl::CheckMenu(CheckMenuKind::CheckBox(
-                    Rc::new(check_menu_item.clone()),
-                    MenuGroup::CheckBoxChange,
-                )));
+                // register CheckBox Menu
+                menu_registry.register_checkbox(check_menu_item.kind(), MenuGroup::CheckBoxChange);
 
                 check_menu_item as &dyn IsMenuItem
             })

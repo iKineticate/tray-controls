@@ -1,440 +1,260 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
+use std::ops::Not;
 use std::rc::Rc;
 
-use tray_icon::menu::{CheckMenuItem, IconMenuItem, MenuId, MenuItem, accelerator::Accelerator};
+use getset::Getters;
+use tray_icon::menu::{CheckMenuItem, MenuId, MenuItemKind};
 
-type DefaultMenuId = MenuId;
-
-/// Represents different types of checkable menu items with their associated data
-///
-/// This enum defines three types of checkable menu items:
-///
-/// ## Variants
-///
-/// ### `CheckBox`
-/// - Contains: `Rc<CheckMenuItem>` and group identifier `G`
-/// - Purpose: A standard checkbox that can be checked/unchecked independently
-/// - Grouping: Items with the same `G` value belong to the same logical group
-///
-/// ### `Radio`
-/// - Contains: `Rc<CheckMenuItem>`, optional default `MenuId`, and group identifier `G`
-/// - Purpose: A radio button where only one item in the same group can be selected
-/// - Default ID:   
-///   If `Some`, specifies which menu should be selected when all radios in the group are unchecked.   
-///   If `None`, no action is taken when all radios are unchecked.   
-/// - Grouping: All radio buttons with the same `G` value form a single selection group
-///
-/// ### `Separate`
-/// - Contains: `Rc<CheckMenuItem>` only
-/// - Purpose: A standalone checkbox with no grouping requirements
-/// - Use case: For independent toggle options that don't belong to any group
-///
-/// ## Type Parameters
-///
-/// - `G`: Group identifier type for organizing related checkable items
-///   - Used by both `CheckBox` and `Radio` variants
-///   - Must implement `Clone` (for storing in the manager)
-///   - Typically use `&'static str` or enum variants for type safety
-///
-/// ## Example
-///
-/// ```
-/// use std::rc::Rc;
-/// use tray_controls::CheckMenuKind;
-/// use tray_icon::menu::{CheckMenuItem, MenuId};
-///
-/// // Create a checkbox belonging to "display_group" group
-/// let checkbox = CheckMenuItem::with_id("show_toolbar", "Show Toolbar", true, false, None);
-/// let check_kind = CheckMenuKind::CheckBox(Rc::new(checkbox), "display_group");
-///
-/// // Create a radio button in "theme_group" group with default selection
-/// let radio = CheckMenuItem::with_id("light_theme", "Light Theme", true, true, None);
-/// let radio_kind = CheckMenuKind::Radio(
-///     Rc::new(radio),
-///     Some(Rc::new(MenuId::new("light_theme"))),
-///     "theme_group"
-/// );
-///
-/// // Create a standalone checkbox
-/// let separate = CheckMenuItem::new("Auto-save", true, true, None);
-/// let separate_kind: CheckMenuKind<&str> = CheckMenuKind::Separate(Rc::new(separate));
-/// ```
-#[derive(Clone)]
-pub enum CheckMenuKind<G> {
-    /// A standard checkbox with group association
-    ///
-    /// - First parameter: The checkbox menu item
-    /// - Second parameter: Group identifier for logical grouping
-    CheckBox(Rc<CheckMenuItem>, G),
-
-    /// A radio button with optional default selection and group association
-    ///
-    /// - First parameter: The radio button menu item
-    /// - Second parameter: Optional default menu ID to select when no radio is checked.
-    ///   If `Some`, this menu will be selected when all radios in the group are unchecked.
-    ///   If `None`, no menu will be selected when all radios are unchecked.
-    /// - Third parameter: Group identifier for exclusive selection
-    Radio(Rc<CheckMenuItem>, Option<Rc<DefaultMenuId>>, G),
-
-    /// A standalone checkbox with no group association
-    ///
-    /// - Parameter: The standalone checkbox menu item
-    Separate(Rc<CheckMenuItem>),
+#[derive(Clone, Getters)]
+#[getset(get = "pub")]
+pub struct MenuItemMeta<G> {
+    kind: MenuItemKind,
+    group: Option<G>,
 }
 
-#[derive(Clone)]
-pub enum MenuControl<G> {
-    MenuItem(MenuItem),
-    IconMenu(IconMenuItem),
-    CheckMenu(CheckMenuKind<G>),
-}
-
-impl<G> MenuControl<G> {
-    pub fn id(&self) -> &MenuId {
-        match self {
-            MenuControl::MenuItem(menu_item) => menu_item.id(),
-            MenuControl::IconMenu(icon_menu) => icon_menu.id(),
-            MenuControl::CheckMenu(check_menu_kind) => match check_menu_kind {
-                CheckMenuKind::CheckBox(check_menu, _)
-                | CheckMenuKind::Radio(check_menu, _, _)
-                | CheckMenuKind::Separate(check_menu) => check_menu.id(),
-            },
-        }
-    }
-
-    pub fn text(&self) -> String {
-        match self {
-            MenuControl::MenuItem(menu_item) => menu_item.text(),
-            MenuControl::IconMenu(icon_menu) => icon_menu.text(),
-            MenuControl::CheckMenu(check_menu_kind) => match check_menu_kind {
-                CheckMenuKind::CheckBox(check_menu, _)
-                | CheckMenuKind::Radio(check_menu, _, _)
-                | CheckMenuKind::Separate(check_menu) => check_menu.text(),
-            },
-        }
-    }
-
-    pub fn set_checked(&self, checked: bool) -> bool {
-        match self {
-            MenuControl::CheckMenu(check_menu_kind) => match check_menu_kind {
-                CheckMenuKind::CheckBox(check_menu, _)
-                | CheckMenuKind::Radio(check_menu, _, _)
-                | CheckMenuKind::Separate(check_menu) => {
-                    check_menu.set_checked(checked);
-                    true
-                }
-            },
-            _ => false,
-        }
-    }
-
-    pub fn set_enabled(&self, enabled: bool) {
-        match self {
-            MenuControl::MenuItem(menu_item) => menu_item.set_enabled(enabled),
-            MenuControl::IconMenu(icon_menu) => icon_menu.set_enabled(enabled),
-            MenuControl::CheckMenu(check_menu_kind) => match check_menu_kind {
-                CheckMenuKind::CheckBox(check_menu, _)
-                | CheckMenuKind::Radio(check_menu, _, _)
-                | CheckMenuKind::Separate(check_menu) => check_menu.set_enabled(enabled),
-            },
-        }
-    }
-
-    pub fn set_text(&self, text: &str) {
-        match self {
-            MenuControl::MenuItem(menu_item) => menu_item.set_text(text),
-            MenuControl::IconMenu(icon_menu) => icon_menu.set_text(text),
-            MenuControl::CheckMenu(check_menu_kind) => match check_menu_kind {
-                CheckMenuKind::CheckBox(check_menu, _)
-                | CheckMenuKind::Radio(check_menu, _, _)
-                | CheckMenuKind::Separate(check_menu) => check_menu.set_text(text),
-            },
-        }
-    }
-
-    pub fn set_accelerator(
-        &self,
-        accelerator: Option<Accelerator>,
-    ) -> Result<(), tray_icon::menu::Error> {
-        match self {
-            MenuControl::MenuItem(menu_item) => menu_item.set_accelerator(accelerator),
-            MenuControl::IconMenu(icon_menu) => icon_menu.set_accelerator(accelerator),
-            MenuControl::CheckMenu(check_menu_kind) => match check_menu_kind {
-                CheckMenuKind::CheckBox(check_menu, _)
-                | CheckMenuKind::Radio(check_menu, _, _)
-                | CheckMenuKind::Separate(check_menu) => check_menu.set_accelerator(accelerator),
-            },
-        }
-    }
-
-    pub fn as_menu_item(&self) -> Option<&MenuItem> {
-        match self {
-            MenuControl::MenuItem(menu_item) => Some(menu_item),
-            _ => None,
-        }
-    }
-
-    pub fn as_icon_menu(&self) -> Option<&IconMenuItem> {
-        match self {
-            MenuControl::IconMenu(icon_menu) => Some(icon_menu),
-            _ => None,
-        }
-    }
-
-    pub fn as_check_menu(&self) -> Option<&CheckMenuItem> {
-        if let MenuControl::CheckMenu(check_menu) = self {
-            let check_menu = match check_menu {
-                CheckMenuKind::CheckBox(check_menu, _)
-                | CheckMenuKind::Radio(check_menu, _, _)
-                | CheckMenuKind::Separate(check_menu) => check_menu,
-            };
-            Some(check_menu)
-        } else {
-            None
-        }
-    }
-}
-
-/// Menu manager that provides centralized menu item management and group state handling
-///
-/// Core features:
-/// 1. **Menu storage**: Unified storage for `MenuItem`, `IconMenuItem`, and `CheckMenuItem`
-/// 2. **Group management**: Organizes checkbox and radio button groups, ensuring proper radio button logic
-/// 3. **Easy access**: Quick access to menu items and their properties via ID
-/// 4. **State synchronization**: Automatically updates other buttons in radio groups when one is selected
-///
-/// The type parameter `G` represents the group identifier for Radio and CheckBox menu items.
-/// Must implement: `Clone + Eq + Hash + PartialEq`
-/// Recommended to use enums or string constants for type safety and readability.
-///
-/// # Example
-/// ```
-/// use std::rc::Rc;
-/// use tray_controls::{CheckMenuKind, MenuControl, MenuManager};
-/// use tray_icon::menu::{CheckMenuItem, MenuId};
-///
-/// let mut manager = MenuManager::<&str>::new();
-///
-/// // Add a checkbox with group ID "display_group"
-/// let checkbox = CheckMenuItem::with_id("show_toolbar", "Show Toolbar", true, true, None);
-/// manager.insert(MenuControl::CheckMenu(
-///     CheckMenuKind::CheckBox(Rc::new(checkbox), "display_group")
-/// ));
-///
-/// // Add radio buttons with group ID "color_group"
-/// let radio = CheckMenuItem::with_id("red", "Red", true, true, None);
-/// manager.insert(MenuControl::CheckMenu(
-///     CheckMenuKind::Radio(
-///         Rc::new(radio),
-///         Some(Rc::new(MenuId::new("radio default id"))),
-///         "color_group"
-///     )
-/// ));
-///
-/// // Handle menu clicks - radio groups are automatically synchronized
-/// let click_menu_id = MenuId::new("");
-///
-/// manager.update(&click_menu_id, |menu| {
-///     if let Some(menu) = menu {
-///         println!("Clicked menu: {}", menu.text());
-///     }
-/// });
-/// ```
-///
-/// # Example
-/// ```
-/// use std::rc::Rc;
-/// use tray_controls::{CheckMenuKind, MenuControl, MenuManager};
-/// use tray_icon::menu::{CheckMenuItem, MenuId};
-///
-/// #[derive(Clone, Eq, Hash, PartialEq)]
-/// enum MenuGroup {
-///     CheckBoxDisplay,
-///     RadioColor,
-/// }
-///
-/// let mut manager = MenuManager::<MenuGroup>::new();
-///
-/// // Add a checkbox with group ID "CheckBoxDisplay"
-/// let checkbox = CheckMenuItem::with_id("show_toolbar", "Show Toolbar", true, true, None);
-/// manager.insert(MenuControl::CheckMenu(
-///     CheckMenuKind::CheckBox(Rc::new(checkbox), MenuGroup::CheckBoxDisplay)
-/// ));
-///
-/// // Add radio buttons with group ID "RadioColor", and set the default radio menu ID
-/// let radio = CheckMenuItem::with_id("red", "Red", true, true, None);
-/// manager.insert(MenuControl::CheckMenu(
-///     CheckMenuKind::Radio(
-///         Rc::new(radio),
-///         Some(Rc::new(MenuId::new("red"))),
-///         MenuGroup::RadioColor
-///     )
-/// ));
-///
-/// // Handle menu clicks - radio groups are automatically synchronized
-/// let click_menu_id = MenuId::new("");
-///
-/// manager.update(&click_menu_id, |menu| {
-///     if let Some(menu) = menu {
-///         println!("Clicked menu: {}", menu.text());
-///     }
-/// });
-/// ```
-#[derive(Clone)]
-pub struct MenuManager<G>
+impl<G> PartialEq for MenuItemMeta<G>
 where
-    G: Clone + Eq + Hash + PartialEq,
+    G: PartialEq,
 {
-    id_to_menu: HashMap<Rc<MenuId>, MenuControl<G>>,
-    grouped_check_items: HashMap<G, HashMap<Rc<MenuId>, Rc<CheckMenuItem>>>,
+    fn eq(&self, other: &Self) -> bool {
+        self.group == other.group && self.kind.id() == other.kind.id()
+    }
 }
 
-impl<G> Default for MenuManager<G>
+#[derive(Clone, Getters)]
+#[getset(get = "pub")]
+struct RadioGroup {
+    members: HashSet<Rc<MenuId>>,
+    default: Option<MenuId>,
+}
+
+#[derive(Clone)]
+pub struct MenuRegistry<G>
 where
-    G: Clone + Eq + Hash + PartialEq,
+    G: Clone + Copy + Eq + Hash + PartialEq + std::fmt::Debug,
+{
+    items: HashMap<Rc<MenuId>, MenuItemMeta<G>>,
+    radio_groups: HashMap<G, RadioGroup>,
+    checkbox_groups: HashMap<G, HashSet<Rc<MenuId>>>,
+}
+
+impl<G> Default for MenuRegistry<G>
+where
+    G: Clone + Copy + Eq + Hash + PartialEq + std::fmt::Debug,
 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<G> MenuManager<G>
+impl<G> MenuRegistry<G>
 where
-    G: Clone + Eq + Hash + PartialEq,
+    G: Clone + Copy + Eq + Hash + PartialEq + std::fmt::Debug,
 {
     pub fn new() -> Self {
-        MenuManager {
-            id_to_menu: HashMap::new(),
-            grouped_check_items: HashMap::new(),
+        Self {
+            items: HashMap::new(),
+            radio_groups: HashMap::new(),
+            checkbox_groups: HashMap::new(),
         }
     }
 
-    /// Inserts a menu control from the menu manager.
-    pub fn insert(&mut self, menu_control: MenuControl<G>) {
-        match &menu_control {
-            MenuControl::MenuItem(menu_item) => {
-                self.id_to_menu
-                    .insert(Rc::new(menu_item.id().clone()), menu_control);
-            }
-            MenuControl::IconMenu(icon_menu) => {
-                self.id_to_menu
-                    .insert(Rc::new(icon_menu.id().clone()), menu_control);
-            }
-            MenuControl::CheckMenu(check_menu_mind) => match check_menu_mind {
-                CheckMenuKind::Separate(check_menu) => {
-                    self.id_to_menu
-                        .insert(Rc::new(check_menu.id().clone()), menu_control);
-                }
-                CheckMenuKind::Radio(check_menu, _default_menu_id, menu_group) => {
-                    let menu_id = Rc::new(check_menu.id().clone());
-                    let menu_group = menu_group.clone();
-                    let check_menu = check_menu.clone();
+    pub fn register_normal(&mut self, kind: MenuItemKind) {
+        let id = Rc::new(kind.id().clone());
+        self.items.insert(id, MenuItemMeta { kind, group: None });
+    }
 
-                    self.id_to_menu.insert(menu_id.clone(), menu_control);
-                    self.grouped_check_items
-                        .entry(menu_group)
-                        .or_default()
-                        .insert(menu_id, check_menu);
-                }
-                CheckMenuKind::CheckBox(check_menu, menu_group) => {
-                    let menu_id = Rc::new(check_menu.id().clone());
-                    let menu_group = menu_group.clone();
-                    let check_menu = check_menu.clone();
+    pub fn register_checkbox(&mut self, kind: MenuItemKind, group: G) -> bool {
+        if kind.as_check_menuitem().is_none() {
+            return false;
+        }
 
-                    self.id_to_menu.insert(menu_id.clone(), menu_control);
-                    self.grouped_check_items
-                        .entry(menu_group)
-                        .or_default()
-                        .insert(menu_id, check_menu);
-                }
+        let id = Rc::new(kind.id().clone());
+
+        self.items.insert(
+            id.clone(),
+            MenuItemMeta {
+                kind,
+                group: Some(group),
             },
-        }
+        );
+
+        self.checkbox_groups.entry(group).or_default().insert(id);
+
+        true
     }
 
-    /// Removes a menu control from the menu manager.
-    pub fn remove(&mut self, menu_id: &MenuId) {
-        let remove_menu = self.id_to_menu.remove(menu_id);
+    pub fn register_radio(
+        &mut self,
+        kind: MenuItemKind,
+        group: G,
+        default: Option<MenuId>,
+    ) -> bool {
+        if kind.as_check_menuitem().is_none() {
+            return false;
+        }
 
-        if let Some(remove_menu) = remove_menu {
-            match &remove_menu {
-                MenuControl::MenuItem(_) | MenuControl::IconMenu(_) => {}
-                MenuControl::CheckMenu(check_menu_kind) => match check_menu_kind {
-                    CheckMenuKind::Separate(_) => {}
-                    CheckMenuKind::CheckBox(_, group) | CheckMenuKind::Radio(_, _, group) => {
-                        if let Some(map) = self.grouped_check_items.get_mut(group) {
-                            map.remove(menu_id);
-                        }
-                    }
-                },
+        let id = Rc::new(kind.id().clone());
+
+        self.items.insert(
+            id.clone(),
+            MenuItemMeta {
+                kind,
+                group: Some(group),
+            },
+        );
+
+        self.radio_groups
+            .entry(group)
+            .or_insert_with(|| RadioGroup {
+                members: HashSet::new(),
+                default,
+            })
+            .members
+            .insert(id);
+
+        true
+    }
+
+    pub fn deregister_normal(&mut self, id: &MenuId) -> bool {
+        self.items.remove(id).is_some()
+    }
+
+    pub fn deregister_checkbox(&mut self, id: &MenuId, group: G) -> bool {
+        self.items.remove(id);
+
+        self.checkbox_groups
+            .get_mut(&group)
+            .map(|checkbox_group| checkbox_group.remove(id))
+            .unwrap_or_default()
+    }
+
+    pub fn deregister_radio(&mut self, id: &MenuId, group: G) -> bool {
+        self.items.remove(id);
+
+        self.radio_groups
+            .get_mut(&group)
+            .map(|radio_group| radio_group.members.remove(id))
+            .unwrap_or_default()
+    }
+
+    pub fn handle_event(&mut self, id: &MenuId) -> Result<&MenuItemMeta<G>, String> {
+        let menu_item_meta = self
+            .items
+            .get(id)
+            .ok_or_else(|| format!("The menu not found: {id:?}"))?;
+
+        let menu_group = menu_item_meta.group();
+
+        let menu_kind = &menu_item_meta.kind();
+
+        // Clicked menu is not in any group, return directly
+        let Some(menu_group) = menu_group else {
+            return Ok(menu_item_meta);
+        };
+
+        // Clicked menu is not in any [Radio] group, return directly
+        let Some(radio_group) = self.radio_groups.get(menu_group) else {
+            if self.checkbox_groups.contains_key(menu_group)
+                && menu_kind.as_check_menuitem().is_some().not()
+            {
+                return Err(format!(
+                    "Menu({id:?}) is not a [CheckMenuItem] on the checkbox group({menu_group:?})"
+                ));
             }
+
+            return Ok(menu_item_meta);
+        };
+
+        // <---Handle [Radio] menu--->
+        let radio_menus_id = radio_group.members();
+
+        let clickd_radio_menu_is_checked = menu_kind
+            .as_check_menuitem()
+            .ok_or_else(|| {
+                format!("Menu({id:?}) is not a [CheckMenuItem] on the radio group({menu_group:?})")
+            })?
+            .is_checked();
+
+        // Clicked menu is selected, deselect other raodio menus
+        if clickd_radio_menu_is_checked {
+            radio_menus_id
+                .iter()
+                .filter(|menu_id| menu_id.as_ref().ne(&id))
+                .filter_map(|id| self.items.get(id))
+                .filter_map(|menu_meta| menu_meta.kind().as_check_menuitem())
+                .for_each(|check_menu| check_menu.set_checked(false));
+
+            Ok(menu_item_meta)
+        // Clicked menu is not selected, check if there is a default menu in the group
+        } else {
+            let Some(default_menu_id) = radio_group.default().as_ref() else {
+                // No default menu, return and uncheck all menus
+                self.get_radio_menu_from_group(menu_group)
+                    .ok_or_else(|| format!("Failed to get radio menus from {menu_group:?}"))?
+                    .iter()
+                    .for_each(|check_menu| check_menu.set_checked(false));
+
+                return Ok(menu_item_meta);
+            };
+
+            let default_menu_meta = self
+                .items
+                .get(default_menu_id)
+                .ok_or_else(|| format!("Default menu({default_menu_id:?}) meta not found"))?;
+
+            let default_menu_item = default_menu_meta.kind().as_check_menuitem()
+                .ok_or_else(|| format!("Default Menu({default_menu_id:?}) is not a [CheckMenuItem] on the radio group({menu_group:?})"))?;
+
+            // Uncheck all other menus except the default menu
+            default_menu_item.set_checked(true);
+            radio_menus_id
+                .iter()
+                .filter(|menu_id| menu_id.as_ref().ne(&default_menu_id))
+                .filter_map(|id| self.items.get(id))
+                .filter_map(|menu_meta| menu_meta.kind().as_check_menuitem())
+                .for_each(|check_menu| check_menu.set_checked(false));
+
+            Ok(default_menu_meta)
         }
     }
 
-    /// Updates the menu control state based on the provided menu ID, and callback the menu control.
-    ///
-    /// NOTE: If the menu control is a radio:    
-    ///     there is a default radio menu, the cllback menu control is the cheked menu   
-    ///     there is no default radio menu, the callback menu control is the click menu   
-    pub fn update(&mut self, menu_id: &MenuId, callback: impl Fn(Option<&MenuControl<G>>)) {
-        let menu_control = self.id_to_menu.get(menu_id);
-
-        if let Some(menu) = menu_control {
-            match menu {
-                MenuControl::MenuItem(_) | MenuControl::IconMenu(_) => {}
-                MenuControl::CheckMenu(check_menu_kind) => match check_menu_kind {
-                    CheckMenuKind::CheckBox(_, _) | CheckMenuKind::Separate(_) => {}
-                    CheckMenuKind::Radio(check_menu, default_menu_id, group) => {
-                        if let Some(check_menus) = self.get_check_items_from_grouped(group) {
-                            let click_menu_state = check_menu.is_checked();
-
-                            let (is_checked_menu_id, is_checked_menu) = if click_menu_state {
-                                (check_menu.id(), Some(menu))
-                            } else {
-                                let Some(default_menu_id) = default_menu_id else {
-                                    return callback(menu_control);
-                                };
-
-                                let default_menu = self.get_menu_item_from_id(default_menu_id);
-
-                                if let Some(MenuControl::CheckMenu(CheckMenuKind::Radio(
-                                    menu,
-                                    _,
-                                    _,
-                                ))) = default_menu
-                                {
-                                    menu.set_checked(true);
-                                    (default_menu_id.as_ref(), default_menu)
-                                } else {
-                                    return callback(menu_control);
-                                }
-                            };
-
-                            check_menus
-                                .iter()
-                                .filter(|(menu_id, _)| menu_id.as_ref().ne(is_checked_menu_id))
-                                .for_each(|(_, check_menu)| check_menu.set_checked(false));
-
-                            return callback(is_checked_menu);
-                        }
-                    }
-                },
-            }
-        }
-
-        callback(menu_control);
+    pub fn get_menu_meta_from_id(&self, id: &MenuId) -> Option<&MenuItemMeta<G>> {
+        self.items.get(id)
     }
 
-    /// Gets a menu control from the menu manager based on the provided menu ID.
-    pub fn get_menu_item_from_id(&self, menu_id: &MenuId) -> Option<&MenuControl<G>> {
-        self.id_to_menu.get(menu_id)
+    pub fn get_menu_kind_from_id(&self, id: &MenuId) -> Option<&MenuItemKind> {
+        self.items.get(id).map(|meta| &meta.kind)
     }
 
-    /// Gets grouped check menu items from the menu manager based on the provided menu group id.
-    pub fn get_check_items_from_grouped(
-        &self,
-        group_id: &G,
-    ) -> Option<&HashMap<Rc<MenuId>, Rc<CheckMenuItem>>> {
-        self.grouped_check_items.get(group_id)
+    pub fn get_menu_group_from_id(&self, id: &MenuId) -> Option<G> {
+        self.items.get(id).and_then(|meta| meta.group)
+    }
+
+    pub fn get_checkbox_id_from_group(&self, group: G) -> Option<&HashSet<Rc<MenuId>>> {
+        self.checkbox_groups.get(&group)
+    }
+
+    pub fn get_checkbox_menu_from_group(&self, group: G) -> Option<Vec<&CheckMenuItem>> {
+        self.get_checkbox_id_from_group(group).map(|ids| {
+            ids.iter()
+                .filter_map(|id| self.items.get(id))
+                .filter_map(|meta| meta.kind.as_check_menuitem())
+                .collect::<Vec<_>>()
+        })
+    }
+
+    pub fn get_radio_id_from_group(&self, group: &G) -> Option<&HashSet<Rc<MenuId>>> {
+        self.radio_groups.get(group).map(|r| r.members())
+    }
+
+    pub fn get_radio_menu_from_group(&self, group: &G) -> Option<Vec<&CheckMenuItem>> {
+        self.get_radio_id_from_group(group).map(|ids| {
+            ids.iter()
+                .filter_map(|id| self.items.get(id))
+                .filter_map(|meta| meta.kind.as_check_menuitem())
+                .collect::<Vec<_>>()
+        })
     }
 }
