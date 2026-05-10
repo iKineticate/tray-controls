@@ -48,20 +48,20 @@ enum UserEvent {
 
 struct App {
     event_loop_proxy: EventLoopProxy<UserEvent>,
-    // 2: add MenuRegistry with your menu group
     menu_registry: MenuRegistry<MenuGroup>,
     tray: Option<TrayIcon>,
 }
 
 impl App {
     fn new(event_loop_proxy: EventLoopProxy<UserEvent>) -> Result<Self> {
-        // 3: create MenuRegistry
+        // 2: create MenuRegistry
         let mut menu_registry: MenuRegistry<MenuGroup> = MenuRegistry::new();
-        // 4: insert menu controls with your menu group
-        let menu = create_menu(&mut menu_registry)?;
+        // 3: create and register menu
+        let menu = create_register_menu(&mut menu_registry)?;
 
         let tray = create_tray(menu)?;
 
+        // 4: add MenuRegistry with Global Management
         Ok(App {
             event_loop_proxy,
             menu_registry,
@@ -90,7 +90,7 @@ impl ApplicationHandler<UserEvent> for App {
                 event_loop.exit();
             }
             UserEvent::MenuEvent(event) => {
-                // 6: handle menu event
+                // 5: handle menu event
                 match self.menu_registry.handle_event(event.id()) {
                     Err(err) => {
                         println!("Failed to handle menu event: {err}");
@@ -101,9 +101,11 @@ impl ApplicationHandler<UserEvent> for App {
                         let return_menu_id = return_menu_kind.id();
 
                         match return_menu_group {
-                            // normal menu
+                            // Normal menu items
                             None => match return_menu_kind {
                                 MenuItemKind::MenuItem(_m) => {
+                                    // If there are only a few ungrouped normal menus,
+                                    // you can directly match menu IDs here.
                                     match return_menu_id.0.as_str() {
                                         "quit" => {
                                             let _ =
@@ -125,23 +127,12 @@ impl ApplicationHandler<UserEvent> for App {
                                 }
                                 _ => {
                                     // Submenu not supported
-                                } // If the type of the menu in the ungrouped menu is only [MenuItem], you can do something by directly matching the ID of the returned menu
-                                  // match return_menu_id.0.as_str(){
-                                  //     "quit" => {
-                                  //         let _ = self.event_loop_proxy.send_event(UserEvent::Exit);
-                                  //     }
-                                  //     "about" => {
-                                  //         // do something
-                                  //     }
-                                  //     _ => {
-                                  //         // do something
-                                  //     }
-                                  // }
+                                }
                             },
-                            // menu group
+                            // Grouped menus
                             Some(group) => {
                                 match group {
-                                    // 7(1): handle radio menu
+                                    // Handle radio menus
                                     MenuGroup::RadioColor => {
                                         // The [as_check_menuitem()] method will not panic because in the handle_event() method,
                                         // it has been determined that if the menu in the [Checkbox] or [Radio] group is not of the [CheckMenuItem] type,
@@ -166,11 +157,14 @@ impl ApplicationHandler<UserEvent> for App {
                                         // TODO: do something
                                     }
 
-                                    // 7(2): handle checkbox menu
+                                    // Handle checkbox menus
                                     MenuGroup::CheckBoxChange => {
                                         println!("Click the checkbox menu: {:?}\n", return_menu_id);
                                         // TODO: do something
-                                    } // handle other non-checkmenuitem menu groups (for multiple TrayIcon)
+                                    }
+                                    
+                                    // If multiple tray icons exist,
+                                    // normal menus can also be grouped for management.
                                 }
                             }
                         }
@@ -198,8 +192,7 @@ impl ApplicationHandler<UserEvent> for App {
     }
 }
 
-// 5: create menu and insert menu controls with your menu group
-fn create_menu(menu_registry: &mut MenuRegistry<MenuGroup>) -> Result<Menu> {
+fn create_register_menu(menu_registry: &mut MenuRegistry<MenuGroup>) -> Result<Menu> {
     let separator_menu_item = PredefinedMenuItem::separator();
 
     // Normal Menu
