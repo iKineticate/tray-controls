@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
-use std::ops::Not;
 use std::rc::Rc;
 
 use getset::Getters;
@@ -34,9 +33,9 @@ pub struct MenuRegistry<G>
 where
     G: Clone + Copy + Eq + Hash + PartialEq + std::fmt::Debug,
 {
-    items: HashMap<Rc<MenuId>, MenuItemMeta<G>>,
+    id_to_kind: HashMap<Rc<MenuId>, MenuItemMeta<G>>,
     radio_groups: HashMap<G, RadioGroup>,
-    checkbox_groups: HashMap<G, HashSet<Rc<MenuId>>>,
+    normal_groups: HashMap<G, HashSet<Rc<MenuId>>>,
 }
 
 impl<G> Default for MenuRegistry<G>
@@ -54,35 +53,23 @@ where
 {
     pub fn new() -> Self {
         Self {
-            items: HashMap::new(),
+            id_to_kind: HashMap::new(),
             radio_groups: HashMap::new(),
-            checkbox_groups: HashMap::new(),
+            normal_groups: HashMap::new(),
         }
     }
 
-    pub fn register_normal(&mut self, kind: MenuItemKind) {
+    pub fn register(&mut self, kind: MenuItemKind, group: Option<G>) {
         let id = Rc::new(kind.id().clone());
-        self.items.insert(id, MenuItemMeta { kind, group: None });
-    }
 
-    pub fn register_checkbox(&mut self, kind: MenuItemKind, group: G) -> bool {
-        if kind.as_check_menuitem().is_none() {
-            return false;
+        if let Some(group) = group {
+            self.normal_groups
+                .entry(group)
+                .or_default()
+                .insert(id.clone());
         }
 
-        let id = Rc::new(kind.id().clone());
-
-        self.items.insert(
-            id.clone(),
-            MenuItemMeta {
-                kind,
-                group: Some(group),
-            },
-        );
-
-        self.checkbox_groups.entry(group).or_default().insert(id);
-
-        true
+        self.id_to_kind.insert(id, MenuItemMeta { kind, group });
     }
 
     pub fn register_radio(
@@ -97,7 +84,7 @@ where
 
         let id = Rc::new(kind.id().clone());
 
-        self.items.insert(
+        self.id_to_kind.insert(
             id.clone(),
             MenuItemMeta {
                 kind,
@@ -117,21 +104,23 @@ where
         true
     }
 
-    pub fn deregister_normal(&mut self, id: &MenuId) -> bool {
-        self.items.remove(id).is_some()
-    }
+    pub fn deregister(&mut self, id: &MenuId, group: Option<G>) -> bool {
+        if self.id_to_kind.remove(id).is_none() {
+            return false;
+        }
 
-    pub fn deregister_checkbox(&mut self, id: &MenuId, group: G) -> bool {
-        self.items.remove(id);
-
-        self.checkbox_groups
-            .get_mut(&group)
-            .map(|checkbox_group| checkbox_group.remove(id))
-            .unwrap_or_default()
+        group.is_some_and(|g| {
+            self.normal_groups
+                .get_mut(&g)
+                .map(|ids| ids.remove(id))
+                .unwrap_or_default()
+        })
     }
 
     pub fn deregister_radio(&mut self, id: &MenuId, group: G) -> bool {
-        self.items.remove(id);
+        if self.id_to_kind.remove(id).is_none() {
+            return false;
+        }
 
         self.radio_groups
             .get_mut(&group)
@@ -141,29 +130,20 @@ where
 
     pub fn handle_event(&mut self, id: &MenuId) -> Result<&MenuItemMeta<G>, String> {
         let menu_item_meta = self
-            .items
-            .get(id)
+            .get_menu_meta_from_id(id)
             .ok_or_else(|| format!("The menu not found: {id:?}"))?;
 
         let menu_group = menu_item_meta.group();
-
-        let menu_kind = &menu_item_meta.kind();
 
         // Clicked menu is not in any group, return directly
         let Some(menu_group) = menu_group else {
             return Ok(menu_item_meta);
         };
 
+        let menu_kind = &menu_item_meta.kind();
+
         // Clicked menu is not in any [Radio] group, return directly
         let Some(radio_group) = self.radio_groups.get(menu_group) else {
-            if self.checkbox_groups.contains_key(menu_group)
-                && menu_kind.as_check_menuitem().is_some().not()
-            {
-                return Err(format!(
-                    "Menu({id:?}) is not a [CheckMenuItem] on the checkbox group({menu_group:?})"
-                ));
-            }
-
             return Ok(menu_item_meta);
         };
 
@@ -182,7 +162,7 @@ where
             radio_menus_id
                 .iter()
                 .filter(|menu_id| menu_id.as_ref().ne(&id))
-                .filter_map(|id| self.items.get(id))
+                .filter_map(|id| self.id_to_kind.get(id))
                 .filter_map(|menu_meta| menu_meta.kind().as_check_menuitem())
                 .for_each(|check_menu| check_menu.set_checked(false));
 
@@ -200,7 +180,7 @@ where
             };
 
             let default_menu_meta = self
-                .items
+                .id_to_kind
                 .get(default_menu_id)
                 .ok_or_else(|| format!("Default menu({default_menu_id:?}) meta not found"))?;
 
@@ -212,7 +192,7 @@ where
             radio_menus_id
                 .iter()
                 .filter(|menu_id| menu_id.as_ref().ne(&default_menu_id))
-                .filter_map(|id| self.items.get(id))
+                .filter_map(|id| self.id_to_kind.get(id))
                 .filter_map(|menu_meta| menu_meta.kind().as_check_menuitem())
                 .for_each(|check_menu| check_menu.set_checked(false));
 
@@ -221,25 +201,25 @@ where
     }
 
     pub fn get_menu_meta_from_id(&self, id: &MenuId) -> Option<&MenuItemMeta<G>> {
-        self.items.get(id)
+        self.id_to_kind.get(id)
     }
 
     pub fn get_menu_kind_from_id(&self, id: &MenuId) -> Option<&MenuItemKind> {
-        self.items.get(id).map(|meta| &meta.kind)
+        self.id_to_kind.get(id).map(|meta| &meta.kind)
     }
 
     pub fn get_menu_group_from_id(&self, id: &MenuId) -> Option<G> {
-        self.items.get(id).and_then(|meta| meta.group)
+        self.id_to_kind.get(id).and_then(|meta| meta.group)
     }
 
     pub fn get_checkbox_id_from_group(&self, group: G) -> Option<&HashSet<Rc<MenuId>>> {
-        self.checkbox_groups.get(&group)
+        self.normal_groups.get(&group)
     }
 
     pub fn get_checkbox_menu_from_group(&self, group: G) -> Option<Vec<&CheckMenuItem>> {
         self.get_checkbox_id_from_group(group).map(|ids| {
             ids.iter()
-                .filter_map(|id| self.items.get(id))
+                .filter_map(|id| self.id_to_kind.get(id))
                 .filter_map(|meta| meta.kind.as_check_menuitem())
                 .collect::<Vec<_>>()
         })
@@ -252,7 +232,7 @@ where
     pub fn get_radio_menu_from_group(&self, group: &G) -> Option<Vec<&CheckMenuItem>> {
         self.get_radio_id_from_group(group).map(|ids| {
             ids.iter()
-                .filter_map(|id| self.items.get(id))
+                .filter_map(|id| self.id_to_kind.get(id))
                 .filter_map(|meta| meta.kind.as_check_menuitem())
                 .collect::<Vec<_>>()
         })

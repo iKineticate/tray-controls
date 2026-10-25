@@ -39,7 +39,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tray-control = "0.2.0"
+tray-control = "0.2.3"
 tray-icon = ">=0.20.0"
 ```
 
@@ -83,20 +83,12 @@ let mut menu_registry = MenuRegistry::<MenuGroup>::new();
 let tray_menu = Menu::new();
 
 let quit_menu_item = MenuItem::with_id("quit", "Quit", true, None);
-
 // Register as a normal menu item
-menu_registry.register_normal(quit_menu_item.kind());
+menu_registry.register(quit_menu_item.kind());
 
-let icon_menu_item = IconMenuItem::with_id(
-    "icon",
-    "Icon",
-    true,
-    Some(tray_icon::menu::Icon),
-    None,
-);
-
+let icon_menu_item = IconMenuItem::with_id("icon", "Icon", true, Some(tray_icon::menu::Icon), None);
 // Register as a normal menu item
-menu_registry.register_normal(icon_menu_item.kind());
+menu_registry.register(icon_menu_item.kind());
 
 tray_menu.append(&quit_menu_item as &dyn IsMenuItem);
 tray_menu.append(&icon_menu_item as &dyn IsMenuItem);
@@ -105,45 +97,41 @@ tray_menu.append(&icon_menu_item as &dyn IsMenuItem);
 - Radio menu items:
 
 ```rust
-use tray_icon::menu::{Menu, MenuId, CheckMenuItem, IsMenuItem, Submenu};
+use tray_icon::menu::{MenuId, CheckMenuItem, IsMenuItem, Submenu};
 use tray_controls::MenuRegistry;
 
-let tray_menu = Menu::new();
 
 let language_sub_menu_item = {
-    let english_menu_id = MenuId::new("english");
-    let chinese_menu_id = MenuId::new("chinese");
-    let japanese_menu_id = MenuId::new("japanese");
+    let languages = ["English", "Chinise", "Japanese"];
 
-    let english_menu_item =
-        CheckMenuItem::with_id(english_menu_id.clone(), "English", true, true, None);
+    let menu_items = languages
+        .into_iter()
+        .map(|text| {
+            let menu_id = MenuId::new(text.to_ascii_lowercase());
+            let is_default_menu = text == "English";
+            let menu = CheckMenuItem::with_id(menu_id, text, true, is_default_menu, None);
 
-    let chinese_menu_item =
-        CheckMenuItem::with_id(chinese_menu_id, "Chinese", true, false, None);
+            // register Radio Menu
+            menu_registry.register_radio(
+                menu.kind(),
+                MenuGroup::RadioLanguage,
+                Some(MenuId::new("english")),
+            );
 
-    let japanese_menu_item =
-        CheckMenuItem::with_id(japanese_menu_id, "Japanese", true, false, None);
-
-    let menu_items = [english_menu_item, chinese_menu_item, japanese_menu_item];
+            menu
+        })
+        .collect::<Vec<_>>();
 
     let menu_items: Vec<&dyn IsMenuItem> = menu_items
         .iter()
-        .map(|check_menu_item| {
-            // Register as a radio menu with a default selected item
-            menu_registry.register_radio(
-                check_menu_item.kind(),
-                MenuGroup::RadioLanguage,
-                Some(english_menu_id.clone()),
-            );
-
-            check_menu_item as &dyn IsMenuItem
-        })
+        .map(|check_menu_item| check_menu_item as &dyn IsMenuItem)
         .collect();
 
-    Submenu::with_items("Language", true, &menu_items)?
+    Submenu::with_items("Language", true, &menu_items).unwrap()
 };
 
 // Append submenu to tray menu
+let tray_menu = Menu::new();
 tray_menu.append(&language_sub_menu_item as &dyn IsMenuItem);
 ```
 
@@ -157,9 +145,9 @@ struct App {
 
 let mut menu_registry = MenuRegistry::<MenuGroup>::new();
 
-let tray_menu = create_register_menu(&mut menu_registry)?;
-
-let tray = create_tray(tray_menu);
+// Create and register the menu according to the method above.
+// let tray_menu = ...;
+// let tray = ...;
 
 let mut app = App {
     menu_registry,

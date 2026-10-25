@@ -150,21 +150,28 @@ impl ApplicationHandler<UserEvent> for App {
                                         );
                                     }
                                     MenuGroup::RadioLanguage => {
+                                        let return_menu =
+                                            return_menu_kind.as_check_menuitem().unwrap();
+
                                         println!(
                                             "Click the radio menu(Language): {:?}\n",
-                                            return_menu_id
+                                            return_menu.text()
                                         );
                                         // TODO: do something
                                     }
 
                                     // Handle checkbox menus
                                     MenuGroup::CheckBoxChange => {
-                                        println!("Click the checkbox menu: {:?}\n", return_menu_id);
+                                        let return_menu =
+                                            return_menu_kind.as_check_menuitem().unwrap();
+
+                                        println!(
+                                            "Click the checkbox menu(Change): {:?}\n",
+                                            return_menu.text()
+                                        );
                                         // TODO: do something
-                                    }
-                                    
-                                    // If multiple tray icons exist,
-                                    // normal menus can also be grouped for management.
+                                    } // If multiple tray icons exist,
+                                      // normal menus can also be grouped for management.
                                 }
                             }
                         }
@@ -197,33 +204,33 @@ fn create_register_menu(menu_registry: &mut MenuRegistry<MenuGroup>) -> Result<M
 
     // Normal Menu
     let quit_menu_item = MenuItem::with_id("quit", "Quit", true, None);
-    menu_registry.register_normal(quit_menu_item.kind());
+    menu_registry.register(quit_menu_item.kind(), None);
 
     // Color Radio Menu
     let color_sub_menu_item = {
-        let red_menu_id = MenuId::new("red");
-        let green_menu_id = MenuId::new("green");
-        let blue_menu_id = MenuId::new("blue");
+        let colors = ["Red", "Green", "Blue"];
 
-        let red_menu_item = CheckMenuItem::with_id(red_menu_id.clone(), "Red", true, true, None);
-        let green_menu_item =
-            CheckMenuItem::with_id(green_menu_id.clone(), "Green", true, false, None);
-        let blue_menu_item =
-            CheckMenuItem::with_id(blue_menu_id.clone(), "Blue", true, false, None);
+        let menu_items = colors
+            .into_iter()
+            .map(|text| {
+                let menu_id = MenuId::new(text.to_ascii_lowercase());
+                let is_default_menu = text == "Red";
+                let menu = CheckMenuItem::with_id(menu_id, text, true, is_default_menu, None);
 
-        let menu_items = [red_menu_item, green_menu_item, blue_menu_item];
-        let menu_items: Vec<&dyn IsMenuItem> = menu_items
-            .iter()
-            .map(|check_menu_item| {
                 // register Radio Menu
                 menu_registry.register_radio(
-                    check_menu_item.kind(),
+                    menu.kind(),
                     MenuGroup::RadioColor,
-                    Some(red_menu_id.clone()),
+                    Some(MenuId::new("red")),
                 );
 
-                check_menu_item as &dyn IsMenuItem
+                menu
             })
+            .collect::<Vec<_>>();
+
+        let menu_items: Vec<&dyn IsMenuItem> = menu_items
+            .iter()
+            .map(|check_menu_item| check_menu_item as &dyn IsMenuItem)
             .collect();
 
         Submenu::with_items("Color", true, &menu_items)?
@@ -231,30 +238,29 @@ fn create_register_menu(menu_registry: &mut MenuRegistry<MenuGroup>) -> Result<M
 
     // Language Radio Menu
     let language_sub_menu_item = {
-        let english_menu_id = MenuId::new("english");
-        let chinise_menu_id = MenuId::new("chinise");
-        let japanese_menu_id = MenuId::new("japanese");
+        let languages = ["English", "Chinise", "Japanese"];
 
-        let english_menu_item =
-            CheckMenuItem::with_id(english_menu_id.clone(), "English", true, true, None);
-        let chinise_menu_item =
-            CheckMenuItem::with_id(chinise_menu_id, "Chinise", true, false, None);
-        let japanese_menu_item =
-            CheckMenuItem::with_id(japanese_menu_id, "Japanese", true, false, None);
+        let menu_items = languages
+            .into_iter()
+            .map(|text| {
+                let menu_id = MenuId::new(text.to_ascii_lowercase());
+                let is_default_menu = text == "English";
+                let menu = CheckMenuItem::with_id(menu_id, text, true, is_default_menu, None);
 
-        let menu_items = [english_menu_item, chinise_menu_item, japanese_menu_item];
-        let menu_items: Vec<&dyn IsMenuItem> = menu_items
-            .iter()
-            .map(|check_menu_item| {
                 // register Radio Menu
                 menu_registry.register_radio(
-                    check_menu_item.kind(),
+                    menu.kind(),
                     MenuGroup::RadioLanguage,
-                    Some(english_menu_id.clone()),
+                    Some(MenuId::new("english")),
                 );
 
-                check_menu_item as &dyn IsMenuItem
+                menu
             })
+            .collect::<Vec<_>>();
+
+        let menu_items: Vec<&dyn IsMenuItem> = menu_items
+            .iter()
+            .map(|check_menu_item| check_menu_item as &dyn IsMenuItem)
             .collect();
 
         Submenu::with_items("Language", true, &menu_items)?
@@ -262,33 +268,24 @@ fn create_register_menu(menu_registry: &mut MenuRegistry<MenuGroup>) -> Result<M
 
     // Change CheckBox Menu
     let change_sub_menu_item = {
-        let added_menu_id = MenuId::new("added");
-        let removed_menu_id = MenuId::new("removed");
-        let connected_menu_id = MenuId::new("connected");
-        let disconnected_menu_id = MenuId::new("disconnected");
+        let change = ["Added", "Removed", "Connected", "Disconnected"];
 
-        let added_menu_item = CheckMenuItem::with_id(added_menu_id, "Added", true, false, None);
-        let removed_menu_item =
-            CheckMenuItem::with_id(removed_menu_id, "Removed", true, false, None);
-        let connected_menu_item =
-            CheckMenuItem::with_id(connected_menu_id, "Connected", true, false, None);
-        let disconnected_menu_item =
-            CheckMenuItem::with_id(disconnected_menu_id, "Disconnected", true, false, None);
+        let menu_items = change
+            .into_iter()
+            .map(|text| {
+                let menu_id = MenuId::new(text.to_ascii_lowercase());
+                let menu = CheckMenuItem::with_id(menu_id, text, true, false, None);
 
-        let menu_items = [
-            added_menu_item,
-            removed_menu_item,
-            connected_menu_item,
-            disconnected_menu_item,
-        ];
+                // register CheckBox Menu
+                menu_registry.register(menu.kind(), Some(MenuGroup::CheckBoxChange));
+
+                menu
+            })
+            .collect::<Vec<_>>();
+
         let menu_items: Vec<&dyn IsMenuItem> = menu_items
             .iter()
-            .map(|check_menu_item| {
-                // register CheckBox Menu
-                menu_registry.register_checkbox(check_menu_item.kind(), MenuGroup::CheckBoxChange);
-
-                check_menu_item as &dyn IsMenuItem
-            })
+            .map(|check_menu_item| check_menu_item as &dyn IsMenuItem)
             .collect();
 
         Submenu::with_items("Change", true, &menu_items)?

@@ -37,8 +37,9 @@
 
 ```toml
 [dependencies]
-tray-control = "0.2.0"
+tray-control = "0.2.3"
 tray-icon = ">=0.20.0"
+# 推荐使用 strum 库方便枚举菜单ID
 ```
 示例使用 **winit + tray-icon + tray-control**：
 
@@ -78,11 +79,11 @@ let tray_menu = Menu::new();
 
 let quit_menu_item = MenuItem::with_id("quit", "Quit", true, None);
 // 将菜单对象转化为 [MenuItemKind] 后注册为普通项目
-menu_registry.register_normal(quit_menu_item.kind());
+menu_registry.register(quit_menu_item.kind(), /* 菜单不分组 */ None);
 
 let icon_menu_item = IconMenuItem::with_id("icon", "Icon", true, Some(tray_icon::menu::Icon), None);
 // 将菜单对象转化为 [MenuItemKind] 后注册为普通项目
-menu_registry.register_normal(icon_menu_item.kind());
+menu_registry.register(icon_menu_item.kind(), /* 菜单不分组 */ None);
 
 tray_menu.append(&quit_menu_item as &dyn IsMenuItem)
 tray_menu.append(&icon_menu_item as &dyn IsMenuItem)
@@ -92,42 +93,40 @@ tray_menu.append(&icon_menu_item as &dyn IsMenuItem)
 
 
 ```rust
-use tray_icon::menu::{Menu, MenuId, CheckMenuItem, IsMenuItem, Submenu};
+use tray_icon::menu::{MenuId, CheckMenuItem, IsMenuItem, Submenu};
 use tray_controls::MenuRegistry;
 
-let tray_menu = Menu::new();
-
 let language_sub_menu_item = {
-    let english_menu_id = MenuId::new("english");
-    let chinise_menu_id = MenuId::new("chinise");
-    let japanese_menu_id = MenuId::new("japanese");
+    let languages = ["English", "Chinise", "Japanese"];
 
-    let english_menu_item =
-        CheckMenuItem::with_id(english_menu_id.clone(), "English", true, true, None);
-    let chinise_menu_item =
-        CheckMenuItem::with_id(chinise_menu_id, "Chinise", true, false, None);
-    let japanese_menu_item =
-        CheckMenuItem::with_id(japanese_menu_id, "Japanese", true, false, None);
+    let menu_items = languages
+        .into_iter()
+        .map(|text| {
+            let menu_id = MenuId::new(text.to_ascii_lowercase());
+            let is_default_menu = text == "English";
+            let menu = CheckMenuItem::with_id(menu_id, text, true, is_default_menu, None);
 
-    let menu_items = [english_menu_item, chinise_menu_item, japanese_menu_item];
-    let menu_items: Vec<&dyn IsMenuItem> = menu_items
-        .iter()
-        .map(|check_menu_item| {
-            // 将菜单对象转化为 [MenuItemKind] 后注册为 有默认选项的单选菜单
+            // 注册为单选项的分组菜单
             menu_registry.register_radio(
-                check_menu_item.kind(),
+                menu.kind(),
                 MenuGroup::RadioLanguage,
-                Some(english_menu_id.clone()),
+                Some(MenuId::new("english")),
             );
 
-            check_menu_item as &dyn IsMenuItem
+            menu
         })
+        .collect::<Vec<_>>();
+
+    let menu_items: Vec<&dyn IsMenuItem> = menu_items
+        .iter()
+        .map(|check_menu_item| check_menu_item as &dyn IsMenuItem)
         .collect();
 
-    Submenu::with_items("Language", true, &menu_items)?
+    Submenu::with_items("Language", true, &menu_items).unwrap()
 };
 
 // 添加菜单项目至托盘菜单中
+let tray_menu = tray_icon::menu::Menu::new();
 tray_menu.append(&language_sub_menu_item as &dyn IsMenuItem)
 ```
 
@@ -140,9 +139,9 @@ struct App {
 
 let mut menu_registry = MenuRegistry::<MenuGroup>::new();
 
-let tray_menu = create_register_menu(&mut menu_registry)?;
-
-let tray = create_tray(tray_menu);
+// 按照上面办法创建菜单并注册菜单
+// let tray_menu = ...;
+// let tray = ...;
 
 let mut app = App {
     menu_registry,
@@ -150,9 +149,6 @@ let mut app = App {
 };
 
 event_loop.run_app(&mut app);
-
-// fn create_registry_menu(menu_registry: &mut MenuRegistry<MenuGroup>)
-// fn create_tray(tray_menu: Menu) -> tray_icon::TrayIcon
 ```
 
 5. 菜单事件处理，例如在 `winit` 中将为菜单新事件设置要调用的处理程序
@@ -168,7 +164,7 @@ struct App {
 UserEvent::MenuEvent(event) => {
     match self.menu_registry.handle_event(event.id()) {
         Err(err) => {
-            println!("Failed to handle menu event: {err}");
+            println!("failed to handle menu event: {err}");
         }
         Ok(return_menu_meta) => {
             let return_menu_group = return_menu_meta.group();
@@ -176,7 +172,7 @@ UserEvent::MenuEvent(event) => {
             let return_menu_id = return_menu_kind.id();
 
             match return_menu_group {
-                // 普通菜单
+                // 无分组的菜单
                 None => match return_menu_kind {
                     MenuItemKind::MenuItem(_menu_item) => {
                         // 如果无分类的普通菜单比较少，可以直接匹配菜单ID来处理事件，不需匹配返回菜单的类型
